@@ -1,0 +1,42 @@
+{
+  "name": "hinge-ts",
+  "version": "0.1.0",
+  "description": "Unofficial browser-first TypeScript SDK for Hinge APIs, with Sendbird chat support through a user-hosted proxy.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "hinge",
+    "api",
+    "sendbird",
+    "sdk",
+    "typescript"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE-MIT"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "pack:dry": "npm --cache .npm-cache pack --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
