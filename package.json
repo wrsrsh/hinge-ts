@@ -31,6 +31,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build",
     "pack:dry": "npm --cache .npm-cache pack --dry-run"
   },
   "devDependencies": {
