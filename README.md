@@ -199,6 +199,26 @@ npm publish
 
 `prepack` builds `dist/` automatically.
 
+GitHub Actions publishing:
+
+1. On npm, open `hinge-ts` package settings.
+2. Add a trusted publisher:
+   - provider: GitHub Actions
+   - organization/user: `wrsrsh`
+   - repository: `hinge-ts`
+   - workflow filename: `publish.yml`
+   - environment name: `npm`
+   - allowed action: `npm publish`
+3. Publish by tagging the package version:
+
+```bash
+npm version patch
+git push origin main --tags
+```
+
+The workflow runs typecheck, tests, dry pack, checks the tag matches
+`package.json`, then publishes to npm.
+
 ## License
 
 MIT.

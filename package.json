@@ -11,6 +11,10 @@
     "sdk",
     "typescript"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wrsrsh/hinge-ts.git"
+  },
   "sideEffects": false,
   "exports": {
     ".": {
