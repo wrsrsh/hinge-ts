@@ -6,10 +6,17 @@ import {
   ProxySendbirdRealtimeTransport
 } from "hinge-ts";
 
+const proxyToken = "your-short-lived-proxy-token";
+
 export const client = HingeClient.builder()
   .phoneNumber("+15555550123")
-  .transport(new HingeProxyTransport({ baseUrl: "/api/hinge-proxy" }))
-  .realtimeTransport(new ProxySendbirdRealtimeTransport({ url: "/api/hinge-proxy/ws/sendbird" }))
+  .transport(new HingeProxyTransport({
+    baseUrl: "/api/hinge-proxy",
+    headers: { authorization: `Bearer ${proxyToken}` }
+  }))
+  .realtimeTransport(new ProxySendbirdRealtimeTransport({
+    url: `/api/hinge-proxy/ws/sendbird?token=${encodeURIComponent(proxyToken)}`
+  }))
   .storage(new BrowserStorage())
   .build();
 

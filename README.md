@@ -37,12 +37,17 @@ import {
   ProxySendbirdRealtimeTransport
 } from "hinge-ts";
 
+const proxyToken = "your-short-lived-proxy-token";
+
 const client = HingeClient.builder()
   .phoneNumber("+15555550123")
-  .transport(new HingeProxyTransport({ baseUrl: "/api/hinge-proxy" }))
+  .transport(new HingeProxyTransport({
+    baseUrl: "/api/hinge-proxy",
+    headers: { authorization: `Bearer ${proxyToken}` }
+  }))
   .realtimeTransport(
     new ProxySendbirdRealtimeTransport({
-      url: "/api/hinge-proxy/ws/sendbird"
+      url: `/api/hinge-proxy/ws/sendbird?token=${encodeURIComponent(proxyToken)}`
     })
   )
   .storage(new BrowserStorage())
@@ -150,18 +155,23 @@ Body:
 Realtime proxy endpoint:
 
 ```http
-GET /api/hinge-proxy/ws/sendbird
+GET /api/hinge-proxy/ws/sendbird?token=...
 ```
 
 The browser sends a `connect` payload first. The proxy opens the upstream
 Sendbird socket with the provided headers, then relays text frames both ways.
 
-See [docs/proxy.md](docs/proxy.md) and [examples/proxy](examples/proxy).
+Use an `Authorization` header for REST calls and a short-lived query token for
+the realtime socket.
+
+See [docs/proxy.md](docs/proxy.md), [docs/deploy.md](docs/deploy.md), and
+[examples](examples).
 
 ## Docs
 
 - [Auth](docs/auth.md)
 - [Proxy](docs/proxy.md)
+- [Deployment](docs/deploy.md)
 - [Chat](docs/chat.md)
 - [Recommendations](docs/recommendations.md)
 - [Profiles](docs/profiles.md)

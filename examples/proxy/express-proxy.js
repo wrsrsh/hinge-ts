@@ -1,49 +1,74 @@
 import express from "express";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
+import { createHingeRestProxyHandler } from "hinge-ts/proxy";
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
 
-const allowedHosts = new Set(["prod-api.hingeaws.net"]);
-
-app.post("/api/hinge-proxy/request", async (req, res) => {
-  const { url, method, headers, body, responseType } = req.body;
-  const upstream = new URL(url);
-  if (!allowedHosts.has(upstream.host) && !upstream.host.endsWith(".sendbird.com")) {
-    res.status(400).json({ error: "upstream host is not allowed" });
-    return;
+const rest = createHingeRestProxyHandler({
+  cors: {
+    origin: ["http://localhost:5173"],
+    credentials: true
+  },
+  authorize: ({ request }) => {
+    const expected = process.env.HINGE_PROXY_TOKEN;
+    if (!expected) return true;
+    const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    return token === expected;
   }
-
-  const init = { method, headers };
-  if (body !== undefined) {
-    init.body = JSON.stringify(body);
-  }
-  const response = await fetch(upstream, init);
-
-  if (responseType === "bytes") {
-    const bytes = Buffer.from(await response.arrayBuffer()).toString("base64");
-    res.status(response.status).send(JSON.stringify(bytes));
-    return;
-  }
-
-  const text = await response.text();
-  res.status(response.status).type(response.headers.get("content-type") || "application/json").send(text);
 });
 
-const server = app.listen(3000);
+app.post("/api/hinge-proxy/request", async (req, res) => {
+  const response = await rest(toWebRequest(req));
+  await sendWebResponse(res, response);
+});
+
+const server = app.listen(process.env.PORT ?? 3000);
 const wss = new WebSocketServer({ server, path: "/api/hinge-proxy/ws/sendbird" });
 
-wss.on("connection", (browserSocket) => {
-  browserSocket.once("message", async (message) => {
-    const { input } = JSON.parse(String(message));
-    const { WebSocket } = await import("ws");
-    const sendbirdSocket = new WebSocket(input.url, { headers: input.headers });
+wss.on("connection", (browserSocket, req) => {
+  if (!isSocketAuthorized(req)) {
+    browserSocket.close(1008, "unauthorized");
+    return;
+  }
 
+  browserSocket.once("message", (message) => {
+    const { input } = JSON.parse(String(message));
+    const upstream = new URL(input.url);
+    if (upstream.protocol !== "wss:" || !upstream.hostname.endsWith(".sendbird.com")) {
+      browserSocket.close(1008, "upstream host is not allowed");
+      return;
+    }
+
+    const sendbirdSocket = new WebSocket(input.url, { headers: input.headers });
     sendbirdSocket.on("message", (frame) => browserSocket.send(frame.toString()));
-    browserSocket.on("message", (frame) => sendbirdSocket.send(frame.toString()));
-    sendbirdSocket.on("close", (code, reason) => browserSocket.send(`__CLOSE__:${code}:${reason.toString()}`));
+    browserSocket.on("message", (frame) => {
+      if (sendbirdSocket.readyState === WebSocket.OPEN) sendbirdSocket.send(frame.toString());
+    });
+    sendbirdSocket.on("close", (code, reason) => browserSocket.close(code, reason.toString()));
     browserSocket.on("close", () => sendbirdSocket.close());
   });
 });
 
-console.log("hinge proxy listening on http://localhost:3000");
+console.log("hinge proxy listening");
+
+function isSocketAuthorized(req) {
+  const expected = process.env.HINGE_PROXY_TOKEN;
+  if (!expected) return true;
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  return url.searchParams.get("token") === expected;
+}
+
+function toWebRequest(req) {
+  return new Request(`http://${req.headers.host}${req.url}`, {
+    method: req.method,
+    headers: req.headers,
+    body: req.method === "GET" || req.method === "HEAD" ? undefined : req,
+    duplex: "half"
+  });
+}
+
+async function sendWebResponse(res, response) {
+  res.status(response.status);
+  response.headers.forEach((value, key) => res.setHeader(key, value));
+  res.send(await response.text());
+}

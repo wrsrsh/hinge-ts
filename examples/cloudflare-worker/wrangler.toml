@@ -1,0 +1,6 @@
+name = "hinge-ts-proxy"
+main = "worker.ts"
+compatibility_date = "2026-06-14"
+
+[vars]
+# HINGE_PROXY_TOKEN = "change-me"

@@ -44,6 +44,12 @@ sends:
 The proxy relays text frames both ways. It must apply custom headers server-side
 when connecting to Sendbird.
 
+Use an `Authorization` header for REST calls and a short-lived query token on
+the realtime WebSocket URL, for example
+`/api/hinge-proxy/ws/sendbird?token=...`.
+
+For deploy targets and examples, see [Deployment](deploy.md).
+
 ## Security
 
 - Require authentication on every proxy route.
