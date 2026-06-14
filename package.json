@@ -15,6 +15,10 @@
     "type": "git",
     "url": "git+https://github.com/wrsrsh/hinge-ts.git"
   },
+  "homepage": "https://github.com/wrsrsh/hinge-ts#readme",
+  "bugs": {
+    "url": "https://github.com/wrsrsh/hinge-ts/issues"
+  },
   "sideEffects": false,
   "exports": {
     ".": {
