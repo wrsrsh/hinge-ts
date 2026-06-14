@@ -1,6 +1,6 @@
 {
   "name": "hinge-ts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typed SDK for Hinge REST and Sendbird chat through a browser-safe proxy.",
   "type": "module",
   "license": "MIT",
