@@ -10,15 +10,14 @@ concurrency:
   group: publish-npm-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   npm:
     name: Publish to npm
     runs-on: ubuntu-latest
     environment: npm
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -41,3 +40,60 @@ jobs:
           node -e "const pkg = require('./package.json'); const tag = process.env.GITHUB_REF_NAME; if (tag !== 'v' + pkg.version) { console.error('tag ' + tag + ' does not match package version v' + pkg.version); process.exit(1); }"
 
       - run: npm publish
+
+  github-packages:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@wrsrsh"
+          package-manager-cache: false
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          node -e "const pkg = require('./package.json'); const tag = process.env.GITHUB_REF_NAME; if (tag !== 'v' + pkg.version) { console.error('tag ' + tag + ' does not match package version v' + pkg.version); process.exit(1); }"
+
+      - name: Prepare GitHub Packages manifest
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const out = '.github-package';
+          fs.rmSync(out, { recursive: true, force: true });
+          fs.mkdirSync(out, { recursive: true });
+
+          for (const entry of ['dist', 'docs', 'examples']) {
+            fs.cpSync(entry, path.join(out, entry), { recursive: true });
+          }
+          for (const file of ['README.md', 'LICENSE-MIT']) {
+            fs.copyFileSync(file, path.join(out, file));
+          }
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.name = '@wrsrsh/hinge-ts';
+          pkg.publishConfig = { registry: 'https://npm.pkg.github.com' };
+          delete pkg.scripts;
+          delete pkg.devDependencies;
+          fs.writeFileSync(path.join(out, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+
+      - run: npm publish .github-package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

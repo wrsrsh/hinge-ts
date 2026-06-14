@@ -219,6 +219,16 @@ git push origin main --tags
 The workflow runs typecheck, tests, dry pack, checks the tag matches
 `package.json`, then publishes to npm.
 
+The same workflow also publishes a GitHub Packages copy as `@wrsrsh/hinge-ts`.
+It keeps the npmjs package name as `hinge-ts`, prepares a temporary manifest for
+GitHub Packages, and publishes with `GITHUB_TOKEN`.
+
+Install the GitHub Packages copy with:
+
+```bash
+npm install @wrsrsh/hinge-ts --registry=https://npm.pkg.github.com
+```
+
 ## License
 
 MIT.
