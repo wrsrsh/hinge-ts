@@ -3,6 +3,8 @@
 Typed browser SDK for Hinge automation, with Hinge REST, Sendbird chat, session
 persistence, redacted logging, and raw escape hatches.
 
+This package is a TypeScript port of https://github.com/f0rr0/hinge-rs/.
+
 This package is unofficial and is not affiliated with Hinge, Match Group, or
 Sendbird.
 
