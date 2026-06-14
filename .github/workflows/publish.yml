@@ -39,7 +39,19 @@ jobs:
         run: |
           node -e "const pkg = require('./package.json'); const tag = process.env.GITHUB_REF_NAME; if (tag !== 'v' + pkg.version) { console.error('tag ' + tag + ' does not match package version v' + pkg.version); process.exit(1); }"
 
+      - name: Check npm version
+        id: npm-version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "hinge-ts@$version" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "hinge-ts@$version already exists on npm"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - run: npm publish
+        if: steps.npm-version.outputs.published != 'true'
 
   github-packages:
     name: Publish to GitHub Packages
@@ -94,6 +106,20 @@ jobs:
           fs.writeFileSync(path.join(out, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
           NODE
 
+      - name: Check GitHub Packages version
+        id: github-packages-version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "@wrsrsh/hinge-ts@$version" version --registry=https://npm.pkg.github.com >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "@wrsrsh/hinge-ts@$version already exists on GitHub Packages"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - run: npm publish .github-package
+        if: steps.github-packages-version.outputs.published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
