@@ -112,7 +112,7 @@ test("submit otp stores tokens", async () => {
 
 test("send message generates dedup id and posts hinge payload", async () => {
   const transport = new MockTransport()
-    .on("GET", "/v3/users/user-1/my_group_channels?&members_exactly_in=peer-1&show_latest_message=false&distinct_mode=all&hidden_mode=unhidden_only&show_pinned_messages=false&show_metadata=true&member_state_filter=all&user_id=user-1&is_explicit_request=true&public_mode=all&include_left_channel=false&show_conversation=false&show_frozen=true&is_feed_channel=false&show_delivery_receipt=true&unread_filter=all&super_mode=all&show_member=true&show_read_receipt=true&order=chronological&show_empty=true&include_chat_notification=false&limit=1", () => ({ body: { channels: [{ channel_url: "c1" }] } }))
+    .on("GET", "/users/user-1/my_group_channels?&members_exactly_in=peer-1&show_latest_message=false&distinct_mode=all&hidden_mode=unhidden_only&show_pinned_messages=false&show_metadata=true&member_state_filter=all&user_id=user-1&is_explicit_request=true&public_mode=all&include_left_channel=false&show_conversation=false&show_frozen=true&is_feed_channel=false&show_delivery_receipt=true&unread_filter=all&super_mode=all&show_member=true&show_read_receipt=true&order=chronological&show_empty=true&include_chat_notification=false&limit=1", () => ({ body: { channels: [{ channel_url: "c1" }] } }))
     .on("POST", "/message/send", () => ({ body: { ok: true } }));
   const client = HingeClient.builder().phoneNumber("+15555550123").transport(transport).build();
   client.hingeAuth = { identityId: "user-1", token: "hinge-token", expires: "2999-01-01T00:00:00Z" };
@@ -130,6 +130,32 @@ test("send message generates dedup id and posts hinge payload", async () => {
   const send = transport.requests.find((request) => request.pathOrUrl === "/message/send");
   assert.equal(send.body.messageData.message, "hello");
   assert.match(send.body.dedupId, /^[0-9A-F-]+$/);
+});
+
+test("send message falls back to sendbird when hinge send is rejected", async () => {
+  const transport = new MockTransport()
+    .on("GET", "/users/user-1/my_group_channels?&members_exactly_in=peer-1&show_latest_message=false&distinct_mode=all&hidden_mode=unhidden_only&show_pinned_messages=false&show_metadata=true&member_state_filter=all&user_id=user-1&is_explicit_request=true&public_mode=all&include_left_channel=false&show_conversation=false&show_frozen=true&is_feed_channel=false&show_delivery_receipt=true&unread_filter=all&super_mode=all&show_member=true&show_read_receipt=true&order=chronological&show_empty=true&include_chat_notification=false&limit=1", () => ({ body: { channels: [{ channel_url: "c1" }] } }))
+    .on("POST", "/message/send", () => ({ status: 400, body: { message: "Error" } }))
+    .on("POST", "/group_channels/c1/messages", () => ({ body: { message_id: 123 } }));
+  const client = HingeClient.builder().phoneNumber("+15555550123").transport(transport).build();
+  client.hingeAuth = { identityId: "user-1", token: "hinge-token", expires: "2999-01-01T00:00:00Z" };
+  client.sendbirdAuth = { token: "sendbird-token", expires: "2999-01-01T00:00:00Z" };
+
+  await client.chat.sendMessage({
+    ays: false,
+    matchMessage: true,
+    messageType: "text",
+    messageData: { message: "hello" },
+    subjectId: "peer-1",
+    origin: "connection",
+    dedupId: "DEDUP-1"
+  });
+
+  const fallback = transport.requests.find((request) => request.pathOrUrl === "/group_channels/c1/messages");
+  assert.equal(fallback.body.message_type, "MESG");
+  assert.equal(fallback.body.user_id, "user-1");
+  assert.equal(fallback.body.message, "hello");
+  assert.equal(fallback.body.dedup_id, "DEDUP-1");
 });
 
 test("recommendations multi-fetch merges and normalizes subjects", async () => {

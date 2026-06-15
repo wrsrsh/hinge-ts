@@ -1118,10 +1118,32 @@ export class ChatApi {
 
   async sendMessage(payload: SendMessagePayload): Promise<unknown> {
     const body = { ...payload, dedupId: payload.dedupId ?? randomUuid() };
-    await this.getOrCreateDmChannel(this.requireUserId(), payload.subjectId).catch((error) => {
+    const selfUserId = this.requireUserId();
+    let channelUrl: string | undefined;
+    channelUrl = await this.getOrCreateDmChannel(selfUserId, payload.subjectId).catch((error) => {
       this.client.logger?.warn?.("sendbird get-or-create failed before send", error);
+      return undefined;
     });
-    return this.client.requestJson("hinge", "POST", "/message/send", body);
+    try {
+      return await this.client.requestJson("hinge", "POST", "/message/send", body);
+    } catch (error) {
+      if (!channelUrl || !shouldFallbackToSendbirdSend(error)) {
+        throw error;
+      }
+      this.client.logger?.warn?.("hinge message send failed; retrying through sendbird", error);
+      return this.sendSendbirdMessage(channelUrl, body.messageData.message, body.dedupId);
+    }
+  }
+
+  async sendSendbirdMessage(channelUrl: string, message: string, dedupId = randomUuid()): Promise<unknown> {
+    return this.client.requestJson("sendbird", "POST", `/group_channels/${encodeURIComponent(channelUrl)}/messages`, {
+      message_type: "MESG",
+      user_id: this.requireUserId(),
+      message,
+      data: "",
+      custom_type: "",
+      dedup_id: dedupId
+    }, false);
   }
 
   async subscribeEvents(): Promise<SendbirdWsSubscription> {
@@ -1294,6 +1316,14 @@ function isExpired(expires: string): boolean {
 
 function isAbsoluteUrl(pathOrUrl: string): boolean {
   return pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://");
+}
+
+function shouldFallbackToSendbirdSend(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const candidate = error as { kind?: unknown; status?: unknown };
+  return candidate.kind === "http" && (candidate.status === 400 || candidate.status === 404);
 }
 
 function camelizeKeys(value: unknown): unknown {
