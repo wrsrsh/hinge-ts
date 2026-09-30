@@ -179,6 +179,15 @@ export class HingeClient {
   sendbirdAuth?: SendbirdAuthToken;
   sendbirdSessionKey?: string;
   recommendationsCache = new Map<string, RecommendationSubject>();
+  /** viewToken per subjectId; Hinge now requires it to fetch public profiles. */
+  viewTokenBySubject = new Map<string, string>();
+
+  viewTokenFor(subjectId: string): string | undefined {
+    const known = this.viewTokenBySubject.get(subjectId);
+    if (known) return known;
+    const cached = this.recommendationsCache.get(subjectId)?.viewToken;
+    return typeof cached === "string" && cached ? cached : undefined;
+  }
   sessionPath: string | undefined;
   cacheDir: string | undefined;
   autoPersist = false;
@@ -708,6 +717,7 @@ export class RecommendationsApi {
       }
       try {
         const response = await this.client.requestJson<RecommendationsResponse>("hinge", "POST", "/rec/v2", body);
+        recordFeedViewTokens(this.client, response);
         this.client.lastRecsV2Call = Date.now();
         aggregated = aggregated ? mergeRecommendationResponses(aggregated, response) : response;
         completed += 1;
@@ -814,20 +824,35 @@ export class ProfilesApi {
     return this.client.requestJson("hinge", "GET", `/content/v2/public?ids=${ids.join(",")}`, undefined, false);
   }
 
-  async public(userIds: string[]): Promise<PublicUserProfile[]> {
-    const batches = prepareUserIdChunks(userIds, this.client.publicIdsBatchSize);
-    const out: PublicUserProfile[] = [];
-    for (const batch of batches) {
-      out.push(...await this.client.requestJson<PublicUserProfile[]>("hinge", "GET", `/user/v3/public?ids=${batch.join(",")}`));
-    }
-    return out;
+  public(userIds: string[], viewToken?: string): Promise<PublicUserProfile[]> {
+    return this.fetchPublic<PublicUserProfile>("/user/v3/public", userIds, viewToken);
   }
 
-  async publicContent(userIds: string[]): Promise<ProfileContentFull[]> {
-    const batches = prepareUserIdChunks(userIds, this.client.publicIdsBatchSize);
-    const out: ProfileContentFull[] = [];
-    for (const batch of batches) {
-      out.push(...await this.client.requestJson<ProfileContentFull[]>("hinge", "GET", `/content/v2/public?ids=${batch.join(",")}`));
+  publicContent(userIds: string[], viewToken?: string): Promise<ProfileContentFull[]> {
+    return this.fetchPublic<ProfileContentFull>("/content/v2/public", userIds, viewToken);
+  }
+
+  /**
+   * Hinge (app 10.x) requires POST { ids, viewToken } where viewToken is the
+   * token that came with the feed the subject appeared in. Ids grouped by
+   * token; ids with no known token fall back to the legacy GET.
+   */
+  private async fetchPublic<T>(path: string, userIds: string[], viewToken?: string): Promise<T[]> {
+    const groups = new Map<string, string[]>();
+    for (const id of userIds) {
+      const token = viewToken ?? this.client.viewTokenFor(id) ?? "";
+      const list = groups.get(token) ?? [];
+      list.push(id);
+      groups.set(token, list);
+    }
+    const out: T[] = [];
+    for (const [token, ids] of groups) {
+      for (const batch of prepareUserIdChunks(ids, this.client.publicIdsBatchSize)) {
+        const rows = token
+          ? await this.client.requestJson<T[]>("hinge", "POST", path, { ids: batch, viewToken: token })
+          : await this.client.requestJson<T[]>("hinge", "GET", `${path}?ids=${batch.join(",")}`);
+        out.push(...rows);
+      }
     }
     return out;
   }
@@ -1019,8 +1044,19 @@ export class ConnectionsApi {
     return this.client.requestJson("hinge", "GET", `/connection/v2/matchnote/${subjectId}`);
   }
 
-  standouts(): Promise<StandoutsResponse> {
-    return this.client.requestJson("hinge", "GET", "/standouts/v3");
+  async standouts(): Promise<StandoutsResponse> {
+    const response = await this.client.requestJson<StandoutsResponse>("hinge", "GET", "/standouts/v3");
+    const viewToken = typeof response.viewToken === "string" ? response.viewToken : undefined;
+    if (viewToken) {
+      for (const item of response.standouts ?? []) {
+        const subjectId = (item as { subjectId?: unknown }).subjectId;
+        if (typeof subjectId === "string" && subjectId) {
+          this.client.viewTokenBySubject.set(subjectId, viewToken);
+          (item as Record<string, unknown>).viewToken = viewToken;
+        }
+      }
+    }
+    return response;
   }
 }
 
@@ -1449,6 +1485,20 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 }
 
+function recordFeedViewTokens(client: HingeClient, response: RecommendationsResponse): void {
+  for (const feed of response.feeds ?? []) {
+    const viewToken = (feed as { viewToken?: unknown }).viewToken;
+    if (typeof viewToken !== "string" || !viewToken) continue;
+    const previewSubjects = Array.isArray(feed.preview?.subjects) ? (feed.preview.subjects as RecommendationSubject[]) : [];
+    const subjects = [...(feed.subjects ?? []), ...previewSubjects];
+    for (const subject of subjects) {
+      if (!subject.subjectId) continue;
+      client.viewTokenBySubject.set(subject.subjectId, viewToken);
+      subject.viewToken ??= viewToken;
+    }
+  }
+}
+
 function mergeRecommendationResponses(base: RecommendationsResponse, additional: RecommendationsResponse): RecommendationsResponse {
   const feeds = [...base.feeds.map((feed) => ({ ...feed, subjects: [...feed.subjects] }))];
   const feedIndex = new Map(feeds.map((feed, index) => [feed.origin, index]));
@@ -1622,9 +1672,11 @@ function renderProfile(profile?: PublicUserProfile, content?: ProfileContentFull
   if (publicProfile?.age) lines.push(`Age: ${publicProfile.age}`);
   if (publicProfile?.location?.name) lines.push(`Location: ${publicProfile.location.name}`);
   for (const answer of content?.content.answers ?? []) {
-    const promptId = typeof answer.promptId === "string" ? answer.promptId : undefined;
+    const rawPromptId = answer.promptId ?? (answer as { questionId?: unknown }).questionId;
+    const promptId = typeof rawPromptId === "string" ? rawPromptId : undefined;
     const question = answer.question ?? (promptId ? manager?.getPromptDisplayText(promptId) : undefined);
-    const answerText = answer.answer;
+    const rawResponse = answer.answer ?? (answer as { response?: unknown }).response;
+    const answerText = typeof rawResponse === "string" ? rawResponse : undefined;
     if (question && answerText) lines.push(`Prompt "${question}" - "${answerText}"`);
     else if (answerText) lines.push(`Prompt answer "${answerText}"`);
   }
