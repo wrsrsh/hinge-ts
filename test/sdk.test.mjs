@@ -185,6 +185,50 @@ test("recommendations multi-fetch merges and normalizes subjects", async () => {
   assert.deepEqual(recs.feeds[0].subjects.map((subject) => subject.subjectId), ["s1", "s2"]);
 });
 
+test("public profile lookups post the feed viewToken when known", async () => {
+  const transport = new MockTransport()
+    .on("POST", "/rec/v2", () => ({
+      body: {
+        feeds: [{
+          id: 1,
+          origin: "compatibles",
+          viewToken: "view-1",
+          subjects: [{ subjectId: "11", ratingToken: "r1" }],
+          preview: { subjects: [{ subjectId: "12", ratingToken: "rp1" }] }
+        }]
+      }
+    }))
+    .on("GET", "/standouts/v3", () => ({ body: { viewToken: "view-standouts", standouts: [{ subjectId: "21", ratingToken: "rs1" }] } }))
+    .on("POST", "/user/v3/public", (input) => ({ body: input.body.ids.map((userId) => ({ userId, profile: { firstName: `${userId}-${input.body.viewToken}` } })) }))
+    .on("POST", "/content/v2/public", (input) => ({ body: input.body.ids.map((userId) => ({ userId, content: { answers: [{ contentId: "c", questionId: "q", response: "text" }], photos: [] } })) }))
+    .on("GET", "/user/v3/public?ids=99", () => ({ body: [{ userId: "99", profile: {} }] }));
+  const client = HingeClient.builder()
+    .phoneNumber("+15555550123")
+    .transport(transport)
+    .recsFetchConfig({ multiFetchCount: 1, requestDelayMs: 0 })
+    .build();
+  client.hingeAuth = { identityId: "user-1", token: "hinge-token", expires: "2999-01-01T00:00:00Z" };
+
+  const recs = await client.recommendations.get();
+  await client.connections.standouts();
+  assert.equal(recs.feeds[0].subjects[0].viewToken, "view-1");
+  assert.equal(client.viewTokenFor("12"), "view-1");
+  assert.equal(client.viewTokenFor("21"), "view-standouts");
+
+  const profiles = await client.profiles.public(["11", "21", "99"]);
+  assert.deepEqual(profiles.map((profile) => profile.profile.firstName), ["11-view-1", "21-view-standouts", undefined]);
+  const posts = transport.requests.filter((request) => request.method === "POST" && request.pathOrUrl === "/user/v3/public");
+  assert.deepEqual(posts.map((request) => request.body), [
+    { ids: ["11"], viewToken: "view-1" },
+    { ids: ["21"], viewToken: "view-standouts" }
+  ]);
+  assert.equal(transport.requests.filter((request) => request.method === "GET" && request.pathOrUrl.startsWith("/user/v3/public")).length, 1);
+
+  const content = await client.profiles.publicContent(["11"], "view-override");
+  assert.equal(content[0].content.answers[0].response, "text");
+  assert.deepEqual(transport.requests.at(-1).body, { ids: ["11"], viewToken: "view-override" });
+});
+
 test("missing transport errors clearly", async () => {
   const client = HingeClient.builder().phoneNumber("+15555550123").build();
   await assert.rejects(() => client.likes.limit(), HingeError);
