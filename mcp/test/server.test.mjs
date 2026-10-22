@@ -114,6 +114,23 @@ test("recommendations attach profile summaries with rating tokens", async () => 
   await session.close();
 });
 
+test("recommendations post the feed viewToken to the public endpoints and read questionId/response answers", async () => {
+  const transport = new MockTransport()
+    .on("POST", "/rec/v2", () => ({ body: { feeds: [{ id: 1, origin: "compatibles", view_token: "view-1", subjects: [{ subject_id: "1002", rating_token: "tok-2" }] }] } }))
+    .on("POST", "/user/v3/public", (input) => ({ body: input.body.viewToken === "view-1" ? [publicProfile("1002", { first_name: "Sam" })] : [] }))
+    .on("POST", "/content/v2/public", (input) => ({ body: input.body.viewToken === "view-1" ? [publicContent("1002", [{ question_id: "q-1", response: "one lie", content_id: "c-1" }])] : [] }));
+  const { context } = await makeContext({ transport });
+  const session = await connect(context);
+  const recs = await session.call("hinge_recommendations", { limit: 1 });
+  assert.equal(recs.isError, undefined);
+  const [subject] = recs.json.subjects;
+  assert.equal(subject.profile.name, "Sam");
+  assert.deepEqual(subject.profile.prompts[0], { question: null, answer: "one lie", contentId: "c-1", promptId: "q-1" });
+  assert.deepEqual(transport.calls("POST", "/user/v3/public")[0].body, { ids: ["1002"], viewToken: "view-1" });
+  assert.equal(transport.calls("GET", "/user/v3/public").length, 0);
+  await session.close();
+});
+
 test("like and skip post ratings", async () => {
   const transport = new MockTransport()
     .on("POST", "/flag/textreview", () => ({ body: { hcm_run_id: "run-1" } }))

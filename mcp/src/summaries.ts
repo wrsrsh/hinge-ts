@@ -56,11 +56,13 @@ export function summarizeProfile(userId: string, profile: PublicUserProfile | un
   const publicProfile = profile?.profile;
   const name = publicProfile?.firstName ?? publicProfile?.name?.firstName ?? null;
   const prompts = (content?.content.answers ?? []).map((answer) => {
-    const promptId = typeof answer.promptId === "string" ? answer.promptId : null;
+    const rawPromptId = answer.promptId ?? (answer as { questionId?: unknown }).questionId;
+    const promptId = typeof rawPromptId === "string" ? rawPromptId : null;
     const question = answer.question ?? (promptId ? manager?.getPromptDisplayText(promptId) : undefined) ?? null;
+    const rawResponse = answer.answer ?? (answer as { response?: unknown }).response;
     return {
       question,
-      answer: answer.answer ?? null,
+      answer: typeof rawResponse === "string" ? rawResponse : null,
       contentId: answer.contentId ?? answer.id ?? null,
       promptId
     };
