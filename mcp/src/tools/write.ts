@@ -81,7 +81,7 @@ export function registerWriteTools(server: McpServer, context: HingeMcpContext):
       annotations: WRITE
     },
     guarded(async ({ subjectId, message, isFirstMessage }) => {
-      await client.ensureSendbirdAuth();
+      await context.ensureChatSession();
       let first = isFirstMessage;
       let channelUrl: string | undefined;
       if (first === undefined) {
@@ -139,7 +139,7 @@ export function registerWriteTools(server: McpServer, context: HingeMcpContext):
       },
       guarded(async ({ service, method, path, body }) => {
         if (service === "sendbird") {
-          await client.ensureSendbirdAuth();
+          await context.ensureChatSession();
         }
         const response = service === "hinge"
           ? await client.raw.hinge(method as HingeHttpMethod, path, body)

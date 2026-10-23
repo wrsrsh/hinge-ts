@@ -1,5 +1,13 @@
-import { BrowserFetchTransport, HingeClient, type HingeLogger } from "hinge-ts";
+import {
+  BrowserFetchTransport,
+  HingeClient,
+  type HingeLogger,
+  type SendbirdConnectRequest,
+  type SendbirdRealtimeConnection,
+  type SendbirdRealtimeTransport
+} from "hinge-ts";
 import { basename } from "node:path";
+import WebSocket, { type RawData } from "ws";
 import type { HingeMcpConfig } from "./config.js";
 import { FileStorage } from "./storage.js";
 
@@ -12,13 +20,13 @@ export type HingeMcpContext = {
   sessionKey: string;
   saveSession(): Promise<void>;
   loadSession(): Promise<void>;
+  ensureChatSession(): Promise<void>;
   hasPhoneNumber(): boolean;
 };
 
 /**
  * Builds a HingeClient that talks to Hinge directly from Node using global
- * fetch and persists the session to a file. Realtime WebSocket features are
- * not wired up; the MCP server only uses REST endpoints.
+ * fetch and persists the session to a file.
  */
 export function createHingeContext(config: HingeMcpConfig, logger?: HingeLogger): HingeMcpContext {
   const storage = new FileStorage(config.cacheDir);
@@ -26,6 +34,7 @@ export function createHingeContext(config: HingeMcpConfig, logger?: HingeLogger)
   let builder = HingeClient.builder()
     .phoneNumber(config.phoneNumber ?? UNSET_PHONE_NUMBER)
     .transport(new BrowserFetchTransport(logger ? { logger } : {}))
+    .realtimeTransport(new NodeSendbirdRealtimeTransport())
     .storage(storage);
   if (logger) {
     builder = builder.logger(logger);
@@ -44,8 +53,82 @@ export function createHingeContext(config: HingeMcpConfig, logger?: HingeLogger)
         client.phoneNumber = config.phoneNumber;
       }
     },
+    ensureChatSession: async () => {
+      await client.ensureRealtime();
+    },
     hasPhoneNumber: () => client.phoneNumber !== UNSET_PHONE_NUMBER && client.phoneNumber.trim().length > 0
   };
+}
+
+class NodeSendbirdRealtimeTransport implements SendbirdRealtimeTransport {
+  async connect(input: SendbirdConnectRequest): Promise<SendbirdRealtimeConnection> {
+    const socket = new WebSocket(input.url, { headers: input.headers });
+    const connection = new NodeSendbirdConnection(socket);
+    await connection.opened();
+    return connection;
+  }
+}
+
+class NodeSendbirdConnection implements SendbirdRealtimeConnection {
+  private readonly queue: string[] = [];
+  private readonly waiters: Array<(value: IteratorResult<string>) => void> = [];
+  private closed = false;
+  private error: unknown;
+
+  constructor(private readonly socket: WebSocket) {
+    socket.on("message", (data: RawData) => this.push(data.toString()));
+    socket.on("close", (code, reason) => {
+      this.closed = true;
+      this.push(`__CLOSE__:${code}:${reason.toString()}`);
+    });
+    socket.on("error", (error) => {
+      this.error = error;
+      this.closed = true;
+      this.flushClosed();
+    });
+  }
+
+  opened(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.socket.once("open", resolve);
+      this.socket.once("error", reject);
+    });
+  }
+
+  send(frame: string): void {
+    this.socket.send(frame);
+  }
+
+  close(code?: number, reason?: string): void {
+    this.socket.close(code, reason);
+  }
+
+  async *events(): AsyncIterable<string> {
+    while (true) {
+      const queued = this.queue.shift();
+      if (queued !== undefined) {
+        yield queued;
+        continue;
+      }
+      if (this.closed) {
+        if (this.error) throw this.error;
+        return;
+      }
+      const next = await new Promise<IteratorResult<string>>((resolve) => this.waiters.push(resolve));
+      if (next.done) return;
+      yield next.value;
+    }
+  }
+
+  private push(value: string): void {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter({ value, done: false });
+    else this.queue.push(value);
+  }
+
+  private flushClosed(): void {
+    for (const waiter of this.waiters.splice(0)) waiter({ value: undefined, done: true });
+  }
 }
 
 export function stderrLogger(enabled: boolean): HingeLogger | undefined {

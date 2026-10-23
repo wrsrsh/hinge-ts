@@ -20,7 +20,7 @@ export function defaultSettings(overrides: Partial<HingeSettings> = {}): HingeSe
     sendbirdApiUrl: `https://api-${lowerAppId}.sendbird.com`,
     sendbirdWsUrl: `wss://ws-${lowerAppId}.sendbird.com`,
     sendbirdSdkVersion: "4.26.0",
-    hingeAppVersion: "9.91.0",
+    hingeAppVersion: "10.0.0",
     hingeBuildNumber: "11639",
     osVersion: "26.0",
     ...overrides

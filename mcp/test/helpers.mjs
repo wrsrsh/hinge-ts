@@ -42,6 +42,9 @@ export async function makeContext({ env = {}, transport = new MockTransport(), l
   const dir = await mkdtemp(join(tmpdir(), "hinge-mcp-test-"));
   const config = configFromEnv({ HINGE_SESSION_FILE: join(dir, "session.json"), HINGE_PHONE_NUMBER: "+15555550123", ...env }, []);
   const context = createHingeContext(config);
+  context.ensureChatSession = async () => {
+    context.client.sendbirdSessionKey = "session-key";
+  };
   context.client.transport = transport;
   context.client.setRecsFetchConfig({ multiFetchCount: 1, requestDelayMs: 0, rateLimitRetries: 0, rateLimitBackoffMs: 0 });
   if (loggedIn) {

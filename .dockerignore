@@ -1,0 +1,8 @@
+.git
+.github
+.npm-cache
+node_modules
+mcp/node_modules
+mcp/dist
+test
+*.log

@@ -193,7 +193,7 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
       annotations: READ_ONLY
     },
     guarded(async ({ limit }) => {
-      await client.ensureSendbirdAuth();
+      await context.ensureChatSession();
       const response = await client.chat.channels(limit ?? 30);
       const selfId = client.hingeAuth?.identityId;
       return jsonResult({ channels: response.channels.map((channel) => summarizeChannel(channel, selfId)) });
@@ -214,7 +214,7 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
       annotations: READ_ONLY
     },
     guarded(async ({ channelUrl, partnerUserId, limit, beforeTimestamp }) => {
-      await client.ensureSendbirdAuth();
+      await context.ensureChatSession();
       const url = channelUrl ?? (partnerUserId ? (await client.chat.ensureDmWith(partnerUserId)).channelUrl : undefined);
       if (!url) {
         throw new Error("Pass channelUrl or partnerUserId");

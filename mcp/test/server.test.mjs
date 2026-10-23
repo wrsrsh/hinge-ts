@@ -160,8 +160,14 @@ test("chats and messages summarize sendbird payloads", async () => {
       { message_id: "m1", message: "hi", created_at: 1700000000000, user: { user_id: "1001", nickname: "Me" }, channel_url: "ch-1" }
     ] } }));
   const { context } = await makeContext({ transport });
+  let chatSessionStarted = false;
+  context.ensureChatSession = async () => {
+    chatSessionStarted = true;
+    context.client.sendbirdSessionKey = "session-key";
+  };
   const session = await connect(context);
   const chats = await session.call("hinge_chats");
+  assert.equal(chatSessionStarted, true);
   assert.equal(chats.json.channels[0].partnerName, "Sam");
   assert.equal(chats.json.channels[0].unreadMessageCount, 2);
   assert.equal(chats.json.channels[0].lastMessage.text, "see you");

@@ -28,10 +28,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "hinge-ts": "file:..",
+    "ws": "^8.22.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
+    "@types/ws": "^8.18.2",
     "typescript": "^5.9.0"
   },
   "engines": {

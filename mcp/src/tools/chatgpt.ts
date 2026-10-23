@@ -111,7 +111,7 @@ async function search(context: HingeMcpContext, rawQuery: string): Promise<Searc
   }
 
   if (wantsChats) {
-    await client.ensureSendbirdAuth();
+    await context.ensureChatSession();
     const channels = await client.chat.channels(100).catch(() => ({ channels: [] }));
     for (const channel of channels.channels) {
       const partner = channel.members.find((member) => member.userId !== selfId) ?? channel.members[0];
@@ -126,7 +126,7 @@ async function search(context: HingeMcpContext, rawQuery: string): Promise<Searc
 
 async function fetchChat(context: HingeMcpContext, channelUrl: string): Promise<FetchResult> {
   const { client } = context;
-  await client.ensureSendbirdAuth();
+  await context.ensureChatSession();
   const selfId = client.hingeAuth?.identityId;
   const [channel, messages] = await Promise.all([
     client.chat.channel(channelUrl).catch(() => undefined),
